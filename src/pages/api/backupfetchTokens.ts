@@ -1,89 +1,160 @@
-import { Connection, PublicKey } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { Connection, PublicKey, Keypair } from '@solana/web3.js';
+import { Program, AnchorProvider, Wallet, Idl } from '@project-serum/anchor';
+import * as anchor from '@project-serum/anchor';
+import { Metadata, MPL_TOKEN_METADATA_PROGRAM_ID } from '@metaplex-foundation/mpl-token-metadata';
 
+// Define IDL type with proper structure
+interface TokenManagerIdl extends Idl {
+  version: string;
+  name: string;
+  instructions: [];
+  accounts: [
+    {
+      name: 'tokenManager';
+      type: {
+        kind: 'struct';
+        fields: [
+          { name: 'authority', type: 'publicKey' },
+          { name: 'token_mint', type: 'publicKey' },
+          { name: 'token_price', type: 'u64' },
+          { name: 'total_supply', type: 'u64' },
+          { name: 'tokens_sold', type: 'u64' }
+        ];
+      };
+    }
+  ];
+}
+
+// Define IDL constant
+const IDL: TokenManagerIdl = {
+  version: '0.1.0',
+  name: 'token_manager',
+  instructions: [],
+  accounts: [
+    {
+      name: 'tokenManager',
+      type: {
+        kind: 'struct',
+        fields: [
+          { name: 'authority', type: 'publicKey' },
+          { name: 'token_mint', type: 'publicKey' },
+          { name: 'token_price', type: 'u64' },
+          { name: 'total_supply', type: 'u64' },
+          { name: 'tokens_sold', type: 'u64' }
+        ]
+      }
+    }
+  ]
+};
+
+// Pump.fun Program ID
+const PUMP_FUN_PROGRAM_ID = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
+
+// RPC Connection
 const CHAINSTACK_RPC = "https://solana-mainnet.core.chainstack.com/55a33aac970c1baabb5b84fecd188af7";
 const connection = new Connection(CHAINSTACK_RPC, "confirmed");
 
-const PUMP_FUN_PROGRAM_ID = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
+// Program ID and wallet setup
+const walletKeypair = Keypair.generate();
+const wallet = new Wallet(walletKeypair);
 
-async function fetchTokens() {
-  try {
-    const programId = PUMP_FUN_PROGRAM_ID;
+// Create provider and program instances
+const provider = new AnchorProvider(connection, wallet, {
+  preflightCommitment: 'confirmed',
+});
 
-    const tokenAccounts = await connection.getProgramAccounts(programId, {
-      filters: [{ dataSize: 165 }],
-    });
+// Initialize program with IDL type
+const program = new Program(IDL, PUMP_FUN_PROGRAM_ID, provider);
 
-    const tokens = await Promise.all(
-      tokenAccounts.map(async (account, index) => {
-        const mint = account.pubkey;
-
-        // Fetch token metadata
-        const metadata = await connection.getAccountInfo(mint);
-        const symbol = metadata ? metadata.data.toString().substring(0, 4).replace(/\0/g, "") : "UNKN";
-
-        // Calculate actual volume
-        const volume = await calculateVolume(connection, mint);
-
-        return {
-          rank: index + 1,
-          symbol,
-          mint: mint.toBase58(),
-          volume,
-          createdAt: Math.floor(Date.now() / 1000), // Placeholder for actual creation time
-        };
-      })
-    );
-
-    return { data: tokens };
-  } catch (error) {
-    console.error("Error fetching tokens:", error);
-    return { data: [] };
-  }
+// Define TokenManagerAccount type
+interface TokenManagerAccount {
+  authority: PublicKey;
+  token_mint: PublicKey;
+  token_price: anchor.BN;
+  total_supply: anchor.BN;
+  tokens_sold: anchor.BN;
 }
 
-async function calculateVolume(connection: Connection, mint: PublicKey) {
+// Function to fetch token information with enhanced features
+export async function fetchTokens(tokenManagerAddress: string): Promise<{
+  success: boolean;
+  data?: {
+    authority: string;
+    tokenMint: string;
+    tokenPrice: string;
+    totalSupply: string;
+    tokensSold: string;
+    mintInfo: {
+      decimals: number;
+      supply: bigint;
+    };
+    metadata: {
+      name: string;
+      symbol: string;
+      uri: string;
+    } | null;
+  };
+  error?: string;
+  timestamp?: string;
+}> {
   try {
-    const signatures = await connection.getSignaturesForAddress(mint, { limit: 1000 });
-
-    const transactions = await Promise.all(
-      signatures.map((sig) =>
-        connection.getTransaction(sig.signature, { maxSupportedTransactionVersion: 0 })
-      )
-    );
-
-    let totalVolume = 0;
-
-    for (const tx of transactions) {
-      // Ensure `tx` and its `meta` property exist
-      if (!tx || !tx.meta || !tx.meta.preTokenBalances || !tx.meta.postTokenBalances) {
-        continue;
-      }
-
-      const tokenTransfers = tx.meta.preTokenBalances
-        .filter((balance, i) => {
-          const postBalance = tx.meta?.postTokenBalances?.[i];
-          return (
-            balance.mint === mint.toBase58() &&
-            postBalance?.mint === mint.toBase58() &&
-            balance.owner === postBalance?.owner
-          );
-        })
-        .map((balance, i) => {
-          const postBalance = tx.meta?.postTokenBalances?.[i];
-          const preAmount = balance.uiTokenAmount?.uiAmount || 0;
-          const postAmount = postBalance?.uiTokenAmount?.uiAmount || 0;
-          return Math.abs(postAmount - preAmount);
-        });
-
-      totalVolume += tokenTransfers.reduce((sum, amount) => sum + amount, 0);
+    // Validate input address
+    if (!tokenManagerAddress || tokenManagerAddress.length < 32) {
+      throw new Error('Invalid token manager address');
     }
 
-    return totalVolume;
-  } catch (error) {
-    console.error("Error calculating volume:", error);
-    return 0;
+    // Convert address to PublicKey
+    const tokenManagerPubkey = new PublicKey(tokenManagerAddress);
+
+    // Fetch token manager account data with timeout
+    const tokenManagerAccount = (await program.account.tokenManager.fetch(tokenManagerPubkey)) as TokenManagerAccount;
+
+    // Fetch associated token mint information
+    const tokenMintInfo = await connection.getAccountInfo(tokenManagerAccount.token_mint);
+    if (!tokenMintInfo) {
+      throw new Error('Token mint info not found');
+    }
+
+    // Fetch token metadata using Metaplex
+    const [metadataPDA] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from('metadata'),
+        MPL_TOKEN_METADATA_PROGRAM_ID.toBytes(),
+        tokenManagerAccount.token_mint.toBytes(),
+      ],
+      MPL_TOKEN_METADATA_PROGRAM_ID
+    );
+    const metadataAccount = await connection.getAccountInfo(metadataPDA);
+    const metadata = metadataAccount ? Metadata.fromAccountInfo(metadataAccount)[0] : null;
+
+    return {
+      success: true,
+      data: {
+        authority: tokenManagerAccount.authority.toString(),
+        tokenMint: tokenManagerAccount.token_mint.toString(),
+        tokenPrice: tokenManagerAccount.token_price.toString(),
+        totalSupply: tokenManagerAccount.total_supply.toString(),
+        tokensSold: tokenManagerAccount.tokens_sold.toString(),
+        mintInfo: {
+          decimals: tokenMintInfo.data[44],
+          supply: tokenMintInfo.data.readBigUInt64LE(36),
+        },
+        metadata: metadata
+          ? {
+              name: metadata.data.name,
+              symbol: metadata.data.symbol,
+              uri: metadata.data.uri,
+            }
+          : null,
+      },
+    };
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    console.error('Error fetching token data:', err);
+    return {
+      success: false,
+      error: err.message,
+      timestamp: new Date().toISOString(),
+    };
   }
 }
-
-export default fetchTokens;
