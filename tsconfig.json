@@ -1,0 +1,44 @@
+{
+  "compilerOptions": {
+    "target": "ES2017", // Keeps compatibility with modern JavaScript features
+    "lib": ["dom", "dom.iterable", "esnext"], // Includes DOM and ESNext libraries
+    "allowJs": true, // Allows JavaScript files in the project
+    "checkJs": false, // Disables type-checking for JavaScript files
+    "skipLibCheck": true, // Skips type checks for declaration files
+    "strict": true, // Enables strict type-checking
+    "noEmit": true, // Prevents TypeScript from emitting JavaScript files
+    "esModuleInterop": true, // Enables interoperability with ES modules
+    "module": "esnext", // Uses ESNext module system
+    "moduleResolution": "node", // Resolves modules using Node.js logic
+    "resolveJsonModule": true, // Allows importing JSON files as modules
+    "isolatedModules": true, // Ensures each file is treated as a separate module
+    "jsx": "preserve", // Preserves JSX in `.tsx` files
+    "incremental": true, // Speeds up subsequent builds using incremental builds
+    "baseUrl": "./src", // Sets the base URL for module resolution to `src/`
+    "paths": {
+      "@/*": ["*"], // Maps `@/` to the `src/` directory
+      "@/backend/*": ["backend/*"], // Maps `@/backend` to the `src/backend` folder
+      "@/app/*": ["app/*"] // Maps `@/app` to the `src/app` folder
+    },
+    "types": ["node", "jest"], // Adds type definitions for Node.js and Jest
+    "plugins": [
+      {
+        "name": "next" // Adds Next.js-specific TypeScript support
+      }
+    ]
+  },
+  "include": [
+    "next-env.d.ts", // Includes Next.js type declarations
+    "**/*.ts", // Includes all TypeScript files
+    "**/*.tsx", // Includes all TSX files
+    ".next/types/**/*.ts", // Includes Next.js type files
+    "src/**/*.js", // Includes all JavaScript files in `src/`
+    "src/**/*.ts", // Includes all TypeScript files in `src/`
+    "src/**/*.tsx" // Includes all TSX files in `src/`
+  ],
+  "exclude": [
+    "node_modules", // Excludes node_modules from the build process
+    "dist", // Excludes the `dist` folder (if present)
+    ".turbo" // Excludes TurboRepo cache (if used)
+  ]
+}
